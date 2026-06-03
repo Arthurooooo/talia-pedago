@@ -274,33 +274,21 @@
   type AnimSt = { dir: -1 | 0 | 1; eyes: number; mouth: number; arms: 'fold' | 'up' | 'write'; wf: number; down: boolean };
   let anim = $state<AnimSt[]>([]);
   let ctr: { wait: number; blink: number; expr: number; chat: number; hand: number; talk: number; event: number; write: number; wt: number }[] = [];
-  let seatRest: number[] = [];      // bouche de repos par élève
-  let restEyes: number[] = [];      // yeux de repos par élève (≠ tous à 0 → visages variés)
+  let seatRest: number[] = [];      // bouche de repos par élève (frame 10-20, comme le jeu)
 
-  // "Humeurs" de repos : chaque élève en a une (déterministe) → la classe est vivante,
-  // pas un mur de visages identiques. Biaisé vers le neutre/agréable, quelques blasés.
-  const REST_MOODS: ((rest: number) => { eyes: number; mouth: number })[] = [
-    (r) => ({ eyes: 0, mouth: r }),    // neutre
-    (r) => ({ eyes: 0, mouth: r }),    // neutre (poids)
-    (r) => ({ eyes: 0, mouth: 2 }),    // léger sourire
-    (r) => ({ eyes: 10, mouth: r }),   // éveillé
-    (r) => ({ eyes: 10, mouth: 1 }),   // content
-    (r) => ({ eyes: 2, mouth: r }),    // regard différent
-    (r) => ({ eyes: 7, mouth: 19 }),   // blasé
-  ];
-
+  // Fidèle au jeu (Student.hx:431) : tous les élèves ont les yeux frame 0 au repos.
+  // La variété des visages vient de la TÊTE (4) + cheveux + COULEUR DE BOUCHE (frame 10-20),
+  // pas d'yeux différents (setEyesColor est un no-op commenté dans le jeu).
   $effect(() => {
     const n = Math.min(members.length, SEATS.length);
     if (anim.length === n) return;
-    const a: AnimSt[] = []; ctr = []; seatRest = []; restEyes = [];
+    const a: AnimSt[] = []; ctr = []; seatRest = [];
     for (let i = 0; i < n; i++) {
       const meta = META[poolIndex(members[i])];
-      const mood = REST_MOODS[hash(members[i].id + 'mood') % REST_MOODS.length](meta.mouthRest);
-      a.push({ dir: 0, eyes: mood.eyes, mouth: mood.mouth, arms: 'fold', wf: 0, down: false });
+      a.push({ dir: 0, eyes: 0, mouth: meta.mouthRest, arms: 'fold', wf: 0, down: false });
       ctr.push({ wait: rnd(LOOK_MIN, LOOK_MAX), blink: 0, expr: 0, chat: 0, hand: 0, talk: 0,
         event: rnd(100, EVENT_MAX), write: 0, wt: 0 });   // décalage initial pour désynchroniser
-      seatRest.push(mood.mouth);
-      restEyes.push(mood.eyes);
+      seatRest.push(meta.mouthRest);
     }
     anim = a;
   });
@@ -328,8 +316,8 @@
     for (let i = 0; i < n; i++) {
       const c = ctr[i]; const s = { ...a[i] };
       // états temporisés en cours
-      if (c.blink > 0) { c.blink--; if (c.blink === 0 && c.expr === 0 && c.chat === 0) s.eyes = restEyes[i]; }
-      if (c.expr > 0) { c.expr--; if (c.expr === 0) { s.eyes = restEyes[i]; s.mouth = seatRest[i]; } }
+      if (c.blink > 0) { c.blink--; if (c.blink === 0 && c.expr === 0 && c.chat === 0) s.eyes = 0; }
+      if (c.expr > 0) { c.expr--; if (c.expr === 0) { s.eyes = 0; s.mouth = seatRest[i]; } }
       if (c.hand > 0) { c.hand--; if (c.hand === 0) s.arms = 'fold'; }
       if (c.write > 0) {                            // écriture : main qui bouge + tête baissée
         c.write--;
@@ -347,15 +335,15 @@
         const r = Math.random();
         if (r < 0.34) { const e = EXPR[rnd(0, EXPR.length - 1)]; c.expr = e.dur; s.eyes = e.eyes; s.mouth = e.mouth; }
         else if (r < 0.56) { tryChat(i, s, a, n); }
-        else if (r < 0.80) { c.write = rnd(30, 70); c.wt = rnd(3, 6); s.arms = 'write'; s.down = true; s.dir = 0; s.eyes = restEyes[i]; s.mouth = seatRest[i]; s.wf = 0; }
-        else { c.hand = rnd(15, 32); s.arms = 'up'; s.dir = 0; s.eyes = restEyes[i]; s.mouth = seatRest[i]; }
+        else if (r < 0.80) { c.write = rnd(30, 70); c.wt = rnd(3, 6); s.arms = 'write'; s.down = true; s.dir = 0; s.eyes = 0; s.mouth = seatRest[i]; s.wf = 0; }
+        else { c.hand = rnd(15, 32); s.arms = 'up'; s.dir = 0; s.eyes = 0; s.mouth = seatRest[i]; }
         c.event = rnd(EVENT_MIN, EVENT_MAX);
       }
       // clignement ambiant (fréquent) + virage de tête OCCASIONNEL — uniquement au repos.
       else if (idle && --c.wait <= 0) {
         if (Math.random() < TURN_CHANCE) { const r = Math.random(); s.dir = (r < 0.5 ? -1 : 1) as -1 | 0 | 1; }
         else { s.dir = 0; }
-        if (s.eyes === restEyes[i]) { c.blink = 2; s.eyes = 1; }
+        if (s.eyes === 0) { c.blink = 2; s.eyes = 1; }
         c.wait = rnd(LOOK_MIN, LOOK_MAX);
       }
       a[i] = s;
@@ -384,22 +372,12 @@
     a?.arms === 'write' ? (st.armsWrite[a.wf] ?? st.armsWrite[0]) :
     st.armsFold;
 
-  // ===== Prof : face aux élèves par défaut, se tourne parfois vers le tableau (pour écrire) =====
-  // En iso, les élèves sont en HAUT-DROITE du prof → "face aux élèves" = james_back retourné
-  // (on voit son dos, comme dans le jeu). "Vers le tableau" (avant-gauche) = james retourné (visage).
-  let teacherAtBoard = $state(false);
-  $effect(() => {
-    let t1: ReturnType<typeof setTimeout>, t2: ReturnType<typeof setTimeout>;
-    const cycle = () => {
-      t1 = setTimeout(() => {
-        teacherAtBoard = true;                                // se tourne vers le tableau
-        t2 = setTimeout(() => { teacherAtBoard = false; cycle(); }, rnd(2500, 5000));
-      }, rnd(9000, 20000));                                   // reste face à la classe un moment
-    };
-    cycle();
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  });
-  const teacherSrc = $derived(teacherAtBoard ? png('james') : png('james_back'));
+  // ===== Prof : pose unique, face aux élèves (il enseigne) =====
+  // En iso, les élèves sont en HAUT-DROITE du prof → face aux élèves = james_back retourné.
+  // (On retire l'ancien va-et-vient automatique tableau↔classe : les 2 sprites ont des
+  //  silhouettes de cheveux différentes, ce qui faisait "clignoter" une ligne au changement.)
+  const teacherSrc = png('james_back');     // dans la salle : de dos, face à la classe
+  const teacherFace = png('james');         // pour la fiche latérale (on voit son visage)
 
   // ===== Bus : passe dans la rue de temps en temps (lib.Bus, trajet x=RWID+3, y -10→25) =====
   const busGeo = geo['bus'];
@@ -481,7 +459,7 @@
           {@const t = scene.teacherSlot}
           <button class="actor" class:hl={hoveredSid === '__teacher'}
                   style="left:{t.left}px;top:{t.top}px;width:{t.w}px;height:{t.h}px;z-index:{t.zi}"
-                  onclick={() => t.user && (selected = { user: t.user, sprites: [teacherSrc] })}
+                  onclick={() => t.user && (selected = { user: t.user, sprites: [teacherFace] })}
                   onmouseenter={() => (hoveredSid = '__teacher')} onmouseleave={() => (hoveredSid = null)}
                   disabled={!t.user} title={t.name}>
             <img class="flip" src={teacherSrc} alt="" style="width:{t.w}px;height:{t.h}px" />
