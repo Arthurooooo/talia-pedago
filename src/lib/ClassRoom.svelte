@@ -103,7 +103,7 @@
     src: string; left: number; top: number; w: number; h: number;
     flip: boolean; z: number; zi: number; pixel: boolean; kind: 'decor' | 'teacher';
     user?: BubbleUser | null; name?: string; sid?: string; sprites?: string[];
-    blend?: boolean; opacity?: number;
+    blend?: boolean; opacity?: number; mask?: string;
   };
   type Slot = {
     sid: string; seat: number; left: number; top: number; w: number; h: number; zi: number; ziArms: number;
@@ -192,9 +192,22 @@
     placeSym(items, 'solcouloir', 0, RHEI - 5, { zprio: -99, bucket: DP_BG });
     placeSym(items, sk('murcouloir'), 0, 0, { bucket: DP_BG });
     placeSym(items, sk('secretariat'), RWID - 1, -1, { mode: 'B', zprio: -98, bucket: DP_BG });
-    // "Mur tableau" (lib.Mur2) : le jeu lui applique enableHole() → mur avant
-    // semi-transparent pour voir le prof qui se tient devant le tableau.
-    placeSym(items, 'mur2', 0, RHEI, { zprio: 8, opacity: 0.4 });
+    // "Mur tableau" (lib.Mur2) : le jeu lui applique enableHole() = un CERCLE (rayon 40)
+    // gravé en ERASE → un trou circulaire localisé LÀ OÙ EST LE PROF (pas le mur entier).
+    placeSym(items, 'mur2', 0, RHEI, { zprio: 8 });
+    {
+      const mur = items[items.length - 1];
+      const gM = geo['mur2'];
+      // top-left natif du png de mur2 (mode A à la tuile (0,RHEI))
+      const max = -0.5 + 0.5, may = RHEI - 0.5 + 0.5;        // ax=0, ay=RHEI
+      const mLeftN = sx(max, may) - gM.ox, mTopN = sy(max, may) - gM.oy;
+      // centre du torse du prof (BOARD, yr 0.9, mcy 22 ; on remonte ~24 px vers le torse)
+      const tax = BOARD.x - 0.5 + 0.5, tay = BOARD.y - 0.5 + 0.9;
+      const tcx = sx(tax, tay), tcy = sy(tax, tay) - heightMap(BOARD.x, BOARD.y) + 22 - 24;
+      const hx = ((tcx - mLeftN) * S).toFixed(1), hy = ((tcy - mTopN) * S).toFixed(1), hr = (40 * S).toFixed(1);
+      // trou doux : transparent au centre (on voit le prof), opaque au-delà du rayon
+      mur.mask = `radial-gradient(circle ${hr}px at ${hx}px ${hy}px, transparent 0%, transparent 70%, rgba(0,0,0,0.85) 90%, #000 100%)`;
+    }
     placeSym(items, sk('ground2'), 0, RHEI, { zprio: 8 });
     placeSym(items, sk('ground'), 0, 0, { bucket: DP_BG });
     placeSym(items, sk('estrade'), 3, RHEI - 1, { mode: 'B', dx: -14, dy: -4, bucket: DP_BG, useHeight: false });
@@ -232,17 +245,16 @@
       placeSym(items, 'chaiseeleve', x, y, { mode: 'B', dx: -10 + jx, dy: -5 + jy });
       const u = studentOf(m);
       placeStudent(slots, m.id, idx, n, x, y, u, u ? fullName(u) : '?', jx, jy);
-      // Affaires sur le bureau (lib.Student.stuff) — genre assorti au sprite, COULEUR
-      // aléatoire par élève (le jeu fait gotoAndStop(random(totalFrames))).
+      // Affaires sur le bureau (lib.Student.stuff @ tuile de la table) — OFFSETS EXACTS
+      // du jeu : trousse addFurnMc(-9,-10) puis cartable addFurnMc(-7,-8) ; mc.y += 29+dy.
+      // Couleur aléatoire par élève (le jeu : gotoAndStop(random(totalFrames))).
       const male = META[idx].gender === 'm';
-      const tCount = male ? 4 : 3, cCount = male ? 5 : 4;
-      const tColor = hash(m.id + 'tr') % tCount;
-      const cColor = hash(m.id + 'ca') % cCount;
-      // cartable (sac) posé un peu en retrait, puis trousse devant
-      placeSym(items, `${male ? 'cartableg' : 'cartablef'}_${cColor}`, x, y + 1,
-               { mode: 'B', dx: -10 + jx, dy: -9 + jy, zprio: 1.5, opacity: 0.96 });
+      const tColor = hash(m.id + 'tr') % (male ? 4 : 3);
+      const cColor = hash(m.id + 'ca') % (male ? 5 : 4);
       placeSym(items, `${male ? 'trousseg' : 'troussef'}_${tColor}`, x, y + 1,
-               { mode: 'B', dx: 1 + jx, dy: -14 + jy, zprio: 2 });
+               { mode: 'B', dx: -9 + jx, dy: -10 + jy, zprio: 1.5 });
+      placeSym(items, `${male ? 'cartableg' : 'cartablef'}_${cColor}`, x, y + 1,
+               { mode: 'B', dx: -7 + jx, dy: -8 + jy, zprio: 2, opacity: 0.96 });
     });
     const teacherSlot = teacherSlotOf(teacher, teacher ? fullName(teacher) : '');
     items.sort((a, b) => a.z - b.z);
@@ -427,7 +439,7 @@
         {#each scene.items as o (o.z)}
           {#if o.kind === 'decor'}
             <img class="sym" class:pixel={o.pixel} class:flip={o.flip} class:hl={!!o.sid && o.sid === hoveredSid} src={o.src} alt=""
-                 style="left:{o.left}px;top:{o.top}px;width:{o.w}px;height:{o.h}px;z-index:{o.zi}{o.opacity < 1 ? `;opacity:${o.opacity}` : ''}{o.blend ? ';mix-blend-mode:overlay' : ''}" />
+                 style="left:{o.left}px;top:{o.top}px;width:{o.w}px;height:{o.h}px;z-index:{o.zi}{o.opacity < 1 ? `;opacity:${o.opacity}` : ''}{o.blend ? ';mix-blend-mode:overlay' : ''}{o.mask ? `;-webkit-mask-image:${o.mask};mask-image:${o.mask}` : ''}" />
           {:else}
             <button class="actor" class:flip={o.flip} class:hl={!!o.sid && o.sid === hoveredSid}
                     style="left:{o.left}px;top:{o.top}px;width:{o.w}px;height:{o.h}px;z-index:{o.zi}"

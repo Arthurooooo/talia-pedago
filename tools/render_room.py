@@ -131,12 +131,12 @@ for n,(x,y) in enumerate(SEATS[:NSTUD]):
     idx = _h(f"seat{x},{y}") % SN
     jx, jy = jit(x, y)
     add_student(idx, x, y, jx, jy)
-    # affaires sur le bureau : cartable (retrait) + trousse (devant), couleur aléatoire
+    # affaires sur le bureau — offsets EXACTS du jeu (trousse -9,-10 ; cartable -7,-8)
     male = SMETA[idx]["gender"] == "m"
     tColor = _hh(f"{x},{y}tr") % (4 if male else 3)
     cColor = _hh(f"{x},{y}ca") % (5 if male else 4)
-    add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-10+jx, dy=-9+jy, zprio=1.5, opacity=0.96)
-    add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=1+jx, dy=-14+jy, zprio=2)
+    add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=-9+jx, dy=-10+jy, zprio=1.5)
+    add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-7+jx, dy=-8+jy, zprio=2, opacity=0.96)
 
 # ---- sun rays through windows (lib.Sun): Iso(RWID-1, y), addFurnMc(-4,2), OVERLAY, a=0.85 ----
 for yy in [3.7, 5.2, 7.2, 8.7]:
@@ -220,12 +220,27 @@ def overlay_blend(base_canvas, top_png, x, y, opacity, mode="overlay"):
     res = Image.fromarray((np.clip(out,0,1)*255).astype("uint8"), "RGBA")
     base_canvas.paste(res, (x0, y0))
 
+# centre du trou (torse du prof @ BOARD, yr 0.9, mcy 22) en natif
+_tsx, _tsy, _, _ = screen(BOARD[0], BOARD[1], 0.5, 0.9)
+_holeN = (_tsx, _tsy - heightmap(BOARD[0], BOARD[1]) + 22 - 24)   # (x,y) natif
+
+def erase_hole(png, tlx, tly):
+    cx = _holeN[0]*Z - tlx; cy = _holeN[1]*Z - tly; r = 40*Z
+    yy, xx = np.ogrid[:png.height, :png.width]
+    d = np.sqrt((xx-cx)**2 + (yy-cy)**2)
+    keep = np.clip((d - r*0.7) / (r*0.3), 0, 1)   # 0 au centre (trou), 1 au-delà du rayon
+    a = np.asarray(png, float).copy()
+    a[..., 3] *= keep
+    return Image.fromarray(a.astype("uint8"), "RGBA")
+
 for (it, tlx, tly, w, h, path) in placed:
     png = Image.open(path).convert("RGBA")
     if int(w) != png.width:   # student sprites need upscaling to match Z
         png = png.resize((int(w), int(h)), Image.NEAREST)
     if it["flip"]:
         png = png.transpose(Image.FLIP_LEFT_RIGHT)
+    if it["asset"] == "mur2" and not _os.environ.get("NOHOLE"):
+        png = erase_hole(png, tlx, tly)
     x = int(tlx + offx); y = int(tly + offy)
     if it.get("blend") == "overlay":
         overlay_blend(canvas, png, x, y, SUN_OP, SUN_BLEND)
