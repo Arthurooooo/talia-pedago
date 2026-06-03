@@ -134,10 +134,11 @@
   }
 
   function placeStudent(slots: Slot[], sid: string, idx: number, seat: number,
-    cx: number, cy: number, user: BubbleUser | null, name: string, jx = 0, jy = 0) {
-    const g = SG, xr = 0.5, yr = 0.95, yOffset = -3;
+    cx: number, cy: number, user: BubbleUser | null, name: string) {
+    // Assis : getInCasePos() du jeu = { xr:0.5, yr:0.95 } (Student.hx), aucun offset.
+    const g = SG, xr = 0.5, yr = 0.95;
     const ax = cx - 0.5 + xr, ay = cy - 0.5 + yr;
-    const px = sx(ax, ay) + jx, py = sy(ax, ay) + yOffset - heightMap(cx, cy) + jy;
+    const px = sx(ax, ay), py = sy(ax, ay) - heightMap(cx, cy);
     const left = (px - g.ox - FL) * S, top = (py - g.oy - FT) * S, w = g.w * S, h = g.h * S;
     const base = 100 + ax * 7 + ay * 7;
     const zBody = DP_ITEMS * 1e7 + (_i++) + 1000 * Math.floor(base);
@@ -182,8 +183,6 @@
     const pool = g === 'm' ? MALE_IDX : g === 'f' ? FEMALE_IDX : null;
     return pool && pool.length ? pool[hash(m.id) % pool.length] : hash(m.id) % BODY.length;
   };
-  // Léger décalage déterministe par bureau → rangées "pas parfaites" (un peu de vie).
-  const jitter = (sid: string) => { const h = hash(sid + 'jit'); return { jx: (h % 5) - 2, jy: ((h >> 3) % 3) - 1 }; };
 
   const scene = $derived.by(() => {
     _i = 0;
@@ -196,16 +195,14 @@
     // gravé en ERASE → un trou circulaire localisé LÀ OÙ EST LE PROF (pas le mur entier).
     placeSym(items, 'mur2', 0, RHEI, { zprio: 8 });
     {
+      // RAYON 40 exact (Iso.hx:304 drawCircle(r,r,r), r=40) ; centré sur le sprite du prof.
       const mur = items[items.length - 1];
-      const gM = geo['mur2'];
-      // top-left natif du png de mur2 (mode A à la tuile (0,RHEI))
-      const max = -0.5 + 0.5, may = RHEI - 0.5 + 0.5;        // ax=0, ay=RHEI
-      const mLeftN = sx(max, may) - gM.ox, mTopN = sy(max, may) - gM.oy;
-      // centre du torse du prof (BOARD, yr 0.9, mcy 22 ; on remonte ~24 px vers le torse)
+      const gJ = geo['james'];
       const tax = BOARD.x - 0.5 + 0.5, tay = BOARD.y - 0.5 + 0.9;
-      const tcx = sx(tax, tay), tcy = sy(tax, tay) - heightMap(BOARD.x, BOARD.y) + 22 - 24;
-      const hx = ((tcx - mLeftN) * S).toFixed(1), hy = ((tcy - mTopN) * S).toFixed(1), hr = (40 * S).toFixed(1);
-      // trou doux : transparent au centre (on voit le prof), opaque au-delà du rayon
+      const tpx = sx(tax, tay), tpy = sy(tax, tay) - heightMap(BOARD.x, BOARD.y) + 22;
+      const tCx = (tpx - gJ.ox - FL) * S + (gJ.w * S) / 2;     // centre écran du sprite prof
+      const tCy = (tpy - gJ.oy - FT) * S + (gJ.h * S) / 2;
+      const hx = (tCx - mur.left).toFixed(1), hy = (tCy - mur.top).toFixed(1), hr = (40 * S).toFixed(1);
       mur.mask = `radial-gradient(circle ${hr}px at ${hx}px ${hy}px, transparent 0%, transparent 70%, rgba(0,0,0,0.85) 90%, #000 100%)`;
     }
     placeSym(items, sk('ground2'), 0, RHEI, { zprio: 8 });
@@ -239,12 +236,13 @@
     placeSym(items, 'dessins', 9, 0, { mode: 'B', dy: 2 });
     members.slice(0, SEATS.length).forEach((m, n) => {
       const { x, y } = SEATS[n];
-      const { jx, jy } = jitter(m.id);
       const idx = poolIndex(m);
-      placeSym(items, 'tableeleve', x, y + 1, { mode: 'B', dx: -6 + jx, dy: -8 + jy });
-      placeSym(items, 'chaiseeleve', x, y, { mode: 'B', dx: -10 + jx, dy: -5 + jy });
+      // Table à la tuile (x,y+1) : addFurnMc(-6,-8) ; FRAME selon la matière
+      // (Manager.hx:835 — Histoire 3 / Science 4 / Math 1). Chaise (x,y) : frame 1, (-10,-5).
+      placeSym(items, sk('tableeleve'), x, y + 1, { mode: 'B', dx: -6, dy: -8 });
+      placeSym(items, 'chaiseeleve', x, y, { mode: 'B', dx: -10, dy: -5 });
       const u = studentOf(m);
-      placeStudent(slots, m.id, idx, n, x, y, u, u ? fullName(u) : '?', jx, jy);
+      placeStudent(slots, m.id, idx, n, x, y, u, u ? fullName(u) : '?');
       // Affaires sur le bureau (lib.Student.stuff @ tuile de la table) — OFFSETS EXACTS
       // du jeu : trousse addFurnMc(-9,-10) puis cartable addFurnMc(-7,-8) ; mc.y += 29+dy.
       // Couleur aléatoire par élève (le jeu : gotoAndStop(random(totalFrames))).
@@ -252,9 +250,9 @@
       const tColor = hash(m.id + 'tr') % (male ? 4 : 3);
       const cColor = hash(m.id + 'ca') % (male ? 5 : 4);
       placeSym(items, `${male ? 'trousseg' : 'troussef'}_${tColor}`, x, y + 1,
-               { mode: 'B', dx: -9 + jx, dy: -10 + jy, zprio: 1.5 });
+               { mode: 'B', dx: -9, dy: -10, zprio: 1.5 });
       placeSym(items, `${male ? 'cartableg' : 'cartablef'}_${cColor}`, x, y + 1,
-               { mode: 'B', dx: -7 + jx, dy: -8 + jy, zprio: 2, opacity: 0.96 });
+               { mode: 'B', dx: -7, dy: -8, zprio: 2, opacity: 0.96 });
     });
     const teacherSlot = teacherSlotOf(teacher, teacher ? fullName(teacher) : '');
     items.sort((a, b) => a.z - b.z);

@@ -96,11 +96,10 @@ add("coucou",   3, 0, "B", dx=0, dy=-6)
 add("armoire",  11, 0, "B", dx=0, dy=0, flip=True)
 add("tableglobe", 10, 10, "B", dx=0, dy=-8)
 add("dessins",  9, 0, "B", dx=0, dy=2)
-# ---- per-seat chairs + tables (légèrement décalés) ----
+# ---- per-seat chairs + tables (grille exacte du jeu, sans décalage) ----
 for (x, y) in SEATS:
-    jx, jy = jit(x, y)
-    add("tableeleve", x, y+1, "B", dx=-6+jx, dy=-8+jy)
-    add("chaiseeleve", x, y,  "B", dx=-10+jx, dy=-5+jy)
+    add("tableeleve", x, y+1, "B", dx=-6, dy=-8)
+    add("chaiseeleve", x, y,  "B", dx=-10, dy=-5)
 # ---- students (body+arms, seated): yr=0.95, yOffset=-3 ; arms in front of desk ----
 import os as _os, json as _json
 SPOOL = _json.load(open("/Users/arthur/talia-pedago/src/lib/assets/ts/students/_pool.json"))
@@ -110,10 +109,8 @@ def _h(s):
     for c in s: h=((h<<5)+h+ord(c))&0xffffffff
     return h
 SMETA = SPOOL["students"]
-def add_student(idx, x, y, jx=0, jy=0):
-    sxp, syp, ax, ay = screen(x, y, 0.5, 0.95)      # seated in-case pos
-    syp += -3                                        # yOffset
-    sxp += jx; syp += jy
+def add_student(idx, x, y):
+    sxp, syp, ax, ay = screen(x, y, 0.5, 0.95)      # getInCasePos() du jeu, sans offset
     base = "/Users/arthur/talia-pedago/src/lib/assets/ts/students"
     originx = sxp; originy = syp
     g = SMETA[idx]["gender"]; rest = SMETA[idx]["mouthRest"]
@@ -129,14 +126,13 @@ def add_student(idx, x, y, jx=0, jy=0):
 NSTUD = int(_os.environ.get("NSTUD", "18"))
 for n,(x,y) in enumerate(SEATS[:NSTUD]):
     idx = _h(f"seat{x},{y}") % SN
-    jx, jy = jit(x, y)
-    add_student(idx, x, y, jx, jy)
+    add_student(idx, x, y)
     # affaires sur le bureau — offsets EXACTS du jeu (trousse -9,-10 ; cartable -7,-8)
     male = SMETA[idx]["gender"] == "m"
     tColor = _hh(f"{x},{y}tr") % (4 if male else 3)
     cColor = _hh(f"{x},{y}ca") % (5 if male else 4)
-    add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=-9+jx, dy=-10+jy, zprio=1.5)
-    add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-7+jx, dy=-8+jy, zprio=2, opacity=0.96)
+    add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=-9, dy=-10, zprio=1.5)
+    add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-7, dy=-8, zprio=2, opacity=0.96)
 
 # ---- sun rays through windows (lib.Sun): Iso(RWID-1, y), addFurnMc(-4,2), OVERLAY, a=0.85 ----
 for yy in [3.7, 5.2, 7.2, 8.7]:
@@ -160,7 +156,7 @@ items.sort(key=lambda it: (it["bucket"], it["key"]))
 minx = miny = 10**9; maxx = maxy = -10**9
 # SKIN=1|2|3 : remappe les surfaces vers leur variante de skinSet (Science/Math/Histoire)
 _SKIN = _os.environ.get("SKIN")
-_SKINNED = {"murcouloir", "secretariat", "ground2", "ground", "estrade", "wall", "street", "abri"}
+_SKINNED = {"murcouloir", "secretariat", "ground2", "ground", "estrade", "wall", "street", "abri", "tableeleve"}
 if _SKIN:
     for it in items:
         a = it["asset"]
@@ -220,9 +216,11 @@ def overlay_blend(base_canvas, top_png, x, y, opacity, mode="overlay"):
     res = Image.fromarray((np.clip(out,0,1)*255).astype("uint8"), "RGBA")
     base_canvas.paste(res, (x0, y0))
 
-# centre du trou (torse du prof @ BOARD, yr 0.9, mcy 22) en natif
+# centre du trou = centre géométrique du sprite du prof (rayon 40 exact, Iso.hx:304)
+_jm = MAN["james"]
 _tsx, _tsy, _, _ = screen(BOARD[0], BOARD[1], 0.5, 0.9)
-_holeN = (_tsx, _tsy - heightmap(BOARD[0], BOARD[1]) + 22 - 24)   # (x,y) natif
+_torigy = _tsy - heightmap(BOARD[0], BOARD[1]) + 22
+_holeN = (_tsx - _jm["ox"] + _jm["w"]/2, _torigy - _jm["oy"] + _jm["h"]/2)   # natif
 
 def erase_hole(png, tlx, tly):
     cx = _holeN[0]*Z - tlx; cy = _holeN[1]*Z - tly; r = 40*Z
