@@ -179,6 +179,7 @@ export function getEvaluations(token: string, studentId: string): Promise<Evalua
       maxGrade: e.maxPossibleGrade,
       percentage: e.gradePercentage,
       status: e.status,
+      isGradable: e.isGradable,
       type: e.assignmentType,
       comment: e.comment,
       date: e.submissionDate,

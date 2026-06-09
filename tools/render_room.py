@@ -11,12 +11,13 @@ PNG top-left = origin - (manifest.ox, manifest.oy)
 Depth bucket: DP_BG(0) for changeDepth(DP_BG) else DP_ITEMS(5); within bucket
   key = zprio*10000 + creationIndex + 1000*int(100 + ax*7 + ay*7)
 """
-import json, math
+import json, math, os
 from PIL import Image
 
 ASSET = "/Users/arthur/talia-pedago/src/lib/assets/ts/room"
 MAN = json.load(open("/Users/arthur/talia-pedago/src/lib/roomManifest.json"))
 Z = 4  # png export zoom (px per native unit)
+SKINSET = int(os.environ.get("SKIN", "3") or "3")   # 1 Sciences / 2 Maths / 3 Histoire
 
 RWID = RHEI = 12
 EXIT = (1, 9); DESK = (5, 10); BOARD = (6, 11)
@@ -86,16 +87,44 @@ for y in range(0, RHEI+1):
 add("wall",   RWID+1, RHEI+1, "A", zprio=0)
 add("street", RWID+1, 12,     "A", zprio=1)
 add("abri",   RWID+1, 12,     "A", mcx=300, mcy=-150, zprio=1)
-# ---- History furniture ----
-add("bonaparte", 0, 3, "A", mcx=0, mcy=24, xr=1.2)   # Skully2; mc.y=getFeet≈+24
-add("coffre",   0, 4, "B", dx=0, dy=0)
-add("armoire2", 0, 6, "B", dx=0, dy=0)
-add("bureauordi", 1, 11, "B", dx=0, dy=-10, flip=True)
-add("worldmap", 4, 0, "B", dx=0, dy=-24)
-add("coucou",   3, 0, "B", dx=0, dy=-6)
-add("armoire",  11, 0, "B", dx=0, dy=0, flip=True)
-add("tableglobe", 10, 10, "B", dx=0, dy=-8)
-add("dessins",  9, 0, "B", dx=0, dy=2)
+# ---- Dessins d'élèves (position par matière) ----
+add("dessins", 3 if SKINSET == 1 else 5 if SKINSET == 2 else 9, 0, "B", dx=0, dy=2)
+# ---- Déco PAR MATIÈRE (Manager.hx:2150-2305) ----
+if SKINSET == 1:   # Sciences
+    add("skully", 0, 8, "A", mcx=0, mcy=24, xr=1.2, yr=0.1)
+    add("potions", 0, 6, "B")
+    add("potions", 1, 0, "B", flip=True, dy=2)
+    add("potions", 2, 0, "B", flip=True, dy=1)
+    add("potions", RWID-1, 0, "B", flip=True, dy=2)
+    add("armoire", 0, 10, "B")
+    add("ordi", 3, 0, "B", dy=10)
+    add("tableeleve", 7, 9, "B", dx=-10, dy=-5)   # table vide (frame 4 = _s1)
+    add("projo", 3, RHEI-2, "B")
+elif SKINSET == 2:  # Maths
+    add("armoire2", 0, 7, "B")
+    add("armoire2", 9, 0, "B", flip=True, dy=-2)
+    add("tablem", 0, 4, "B", flip=True, dy=2)
+    add("paper", 4, 9, "B")
+    add("paper2", RWID-3, RHEI-3, "B", dx=-3)
+    add("mathscadre", 0, 10, "B", flip=True, dx=-3, dy=-6)
+    add("mathscadre2", 0, 9, "B", flip=True, dx=-5, dy=-6)
+    add("hamster", 1, 0, "B")
+    add("projo", RWID-3, RHEI-3, "B")
+    add("armoire", 0, 6, "B")
+    _cxv = 2
+    for _k in range(2):    # chaises en vrac (validation : 2 fixes)
+        add("chaiseeleve", _cxv, 0, "B", xr=0.6+0.1*_k, yr=0.6)
+        _cxv += 2
+    add("aquarium", 7, 0, "B")
+else:               # Histoire
+    add("bonaparte", 0, 3, "A", mcx=0, mcy=24, xr=1.2)   # Skully2; mc.y=getFeet≈+24
+    add("coffre",   0, 4, "B")
+    add("armoire2", 0, 6, "B")
+    add("bureauordi", 1, 11, "B", dx=0, dy=-10, flip=True)
+    add("worldmap", 4, 0, "B", dx=0, dy=-24)
+    add("coucou",   3, 0, "B", dx=0, dy=-6)
+    add("armoire",  11, 0, "B", dx=0, dy=0, flip=True)
+    add("tableglobe", 10, 10, "B", dx=0, dy=-8)
 # ---- per-seat chairs + tables (grille exacte du jeu, sans décalage) ----
 for (x, y) in SEATS:
     add("tableeleve", x, y+1, "B", dx=-6, dy=-8)
@@ -127,12 +156,14 @@ NSTUD = int(_os.environ.get("NSTUD", "18"))
 for n,(x,y) in enumerate(SEATS[:NSTUD]):
     idx = _h(f"seat{x},{y}") % SN
     add_student(idx, x, y)
-    # affaires sur le bureau — offsets EXACTS du jeu (trousse -9,-10 ; cartable -7,-8)
-    male = SMETA[idx]["gender"] == "m"
-    tColor = _hh(f"{x},{y}tr") % (4 if male else 3)
-    cColor = _hh(f"{x},{y}ca") % (5 if male else 4)
-    add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=-9, dy=-10, zprio=1.5)
-    add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-7, dy=-8, zprio=2, opacity=0.96)
+    # affaires sur le bureau — offsets EXACTS du jeu (trousse -9,-10 ; cartable -7,-8).
+    # Choix appli : seulement ~35% des élèves ont leur kit sorti (ambiance peu motivée).
+    if _hh(f"seat{x},{y}kit") % 100 < 35:
+        male = SMETA[idx]["gender"] == "m"
+        tColor = _hh(f"{x},{y}tr") % (4 if male else 3)
+        cColor = _hh(f"{x},{y}ca") % (5 if male else 4)
+        add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=-9, dy=-10, zprio=1.5)
+        add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-7, dy=-8, zprio=2)
 
 # ---- sun rays through windows (lib.Sun): Iso(RWID-1, y), addFurnMc(-4,2), OVERLAY, a=0.85 ----
 for yy in [3.7, 5.2, 7.2, 8.7]:

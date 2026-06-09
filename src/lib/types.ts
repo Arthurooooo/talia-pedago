@@ -173,11 +173,22 @@ export interface Evaluation {
   grade?: number;          // note brute
   maxGrade?: number;       // barème
   percentage?: number;     // 0..1
-  status?: string;
+  status?: string;         // 'corrigé' | 'rendu' | 'à faire'
+  isGradable?: boolean;    // l'éval donne-t-elle vraiment une note chiffrée ?
   type?: string;           // type d'évaluation
   comment?: string;
   date?: string;           // submissionDate
   trimester?: string;
+}
+
+// Une "vraie note" : notée sur un barème > 0, en EXCLUANT les quiz jamais passés.
+// Dans Bubble, un quiz non passé stocke grade=0 sur une éval non notable (isGradable=false)
+// → ce n'est PAS un 0/20 réel (pas de copie, pas de commentaire). Un vrai 0 a isGradable=true ;
+// un devoir noté garde sa note quelle que soit la valeur d'isGradable.
+export function isRealNote(e: Evaluation): boolean {
+  if (e.grade == null || !e.maxGrade || e.maxGrade <= 0) return false;
+  if (e.grade === 0 && e.isGradable === false) return false;
+  return true;
 }
 
 export interface Attendance {
@@ -198,7 +209,7 @@ export interface Contract {
 
 // Moyenne (sur 20) à partir d'évaluations notées, + nombre pris en compte.
 export function gradeAverage(evals: Evaluation[]): { over20: number; pct: number; n: number } | null {
-  const rated = evals.filter((e) => e.grade != null && e.maxGrade && e.maxGrade > 0);
+  const rated = evals.filter(isRealNote);
   if (!rated.length) return null;
   const meanPct = rated.reduce((s, e) => s + e.grade! / e.maxGrade!, 0) / rated.length;
   return { over20: Math.round(meanPct * 20 * 10) / 10, pct: Math.round(meanPct * 100), n: rated.length };

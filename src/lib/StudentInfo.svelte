@@ -2,7 +2,7 @@
   import Avatar from './Avatar.svelte';
   import type { BubbleUser, Evaluation, Attendance, Contract } from './types';
   import { fullName, ageFrom, relativeTime, discoverableFields, gradeAverage,
-           mentionFor, gradeBucket, attendanceStats } from './types';
+           mentionFor, gradeBucket, attendanceStats, isRealNote } from './types';
   import { refreshUser, userCachedAt, getEvaluations, getAttendance, getContracts } from './bubble';
 
   // `sprites` = exactement le(s) PNG affiché(s) dans la classe (corps + bras, ou James).
@@ -49,13 +49,17 @@
 
   const avg = $derived(gradeAverage(academic));
   const mention = $derived(avg ? mentionFor(avg.over20) : null);
-  // notées (vraies notes) VS à rendre (pas encore notées) — sinon les "à rendre",
-  // plus récentes, masquent toutes les vraies notes dans la liste.
-  const graded = $derived(academic.filter((e) => e.grade != null && e.maxGrade && e.maxGrade > 0));
-  const todo = $derived(academic.filter((e) => e.grade == null));
+  // Vraies notes (isRealNote exclut les quiz jamais passés stockés en 0/x) VS non notées.
+  // Les non notées sont scindées par statut Bubble : 'rendu' = copie remise, en attente de
+  // correction ; 'à faire' (ou autre) = travail pas encore fait. L'ancien libellé "à rendre"
+  // était trompeur : la plupart sont DÉJÀ rendues, juste pas encore corrigées.
+  const graded = $derived(academic.filter(isRealNote));
+  const ungraded = $derived(academic.filter((e) => e.grade == null));
+  const toGrade = $derived(ungraded.filter((e) => (e.status ?? '').toLowerCase() === 'rendu'));
+  const toDo = $derived(ungraded.filter((e) => (e.status ?? '').toLowerCase() !== 'rendu'));
 
   const att = $derived(attendanceStats(attendance));
-  const assiduityGraded = $derived(assiduityEvals.filter((e) => e.grade != null && e.maxGrade && e.maxGrade > 0));
+  const assiduityGraded = $derived(assiduityEvals.filter(isRealNote));
   const assiduityAvg = $derived(gradeAverage(assiduityEvals));
 
   function typeLabel(t?: string): string {
@@ -145,8 +149,11 @@
       {:else}
         <p class="muted">Pas encore de note. 🌱</p>
       {/if}
-      {#if todo.length}
-        <div class="todo">📝 {todo.length} évaluation{todo.length > 1 ? 's' : ''} à rendre</div>
+      {#if toDo.length || toGrade.length}
+        <div class="todos">
+          {#if toDo.length}<span class="todo">📝 {toDo.length} à faire</span>{/if}
+          {#if toGrade.length}<span class="todo wait">🕓 {toGrade.length} en attente de correction</span>{/if}
+        </div>
       {/if}
     </section>
 
@@ -303,8 +310,10 @@
   .grades li.mid .g-val { color: #9a5a12; }
   .grades li.bad .g-val { color: #8a2a2a; }
 
-  .todo { margin-top: 8px; background: #eef3fb; border: 1px dashed #9db8e0; color: #2f5a96;
+  .todos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .todo { background: #eef3fb; border: 1px dashed #9db8e0; color: #2f5a96;
     border-radius: 6px; padding: 5px 9px; font: 700 11px system-ui; }
+  .todo.wait { background: #f6efe1; border-color: #d8c39a; color: #8a6a2a; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { border-radius: 999px; padding: 2px 9px; font: 700 11px system-ui; border: 1px solid #c9b48a; background: #efe0c4; }

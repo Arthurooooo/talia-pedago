@@ -103,7 +103,7 @@
     src: string; left: number; top: number; w: number; h: number;
     flip: boolean; z: number; zi: number; pixel: boolean; kind: 'decor' | 'teacher';
     user?: BubbleUser | null; name?: string; sid?: string; sprites?: string[];
-    blend?: boolean; opacity?: number; mask?: string;
+    blend?: boolean; opacity?: number; mask?: string; desat?: boolean;
   };
   type Slot = {
     sid: string; seat: number; left: number; top: number; w: number; h: number; zi: number; ziArms: number;
@@ -115,11 +115,11 @@
   function placeSym(items: Item[], name: string, cx: number, cy: number, opts: {
     mode?: 'A' | 'B'; dx?: number; dy?: number; mcx?: number; mcy?: number;
     xr?: number; yr?: number; zprio?: number; bucket?: number; flip?: boolean; useHeight?: boolean;
-    sid?: string; blend?: boolean; opacity?: number;
+    sid?: string; blend?: boolean; opacity?: number; desat?: boolean;
   } = {}) {
     const g = geo[name]; if (!g) return;
     const { mode = 'A', dx = 0, dy = 0, mcx = 0, mcy = 0, xr = 0.5, yr = 0.5,
-      zprio = 0, bucket = DP_ITEMS, flip = false, useHeight = true, sid, blend = false, opacity = 1 } = opts;
+      zprio = 0, bucket = DP_ITEMS, flip = false, useHeight = true, sid, blend = false, opacity = 1, desat = false } = opts;
     const ax = cx - 0.5 + xr, ay = cy - 0.5 + yr;
     let px = sx(ax, ay), py = sy(ax, ay);
     if (useHeight) py -= heightMap(cx, cy);
@@ -129,7 +129,7 @@
     items.push({
       src: png(name), w: g.w * S, h: g.h * S,
       left: ((px + ox) - g.ox - FL) * S, top: ((py + oy) - g.oy - FT) * S,
-      flip, z, zi: zi(z), pixel: false, kind: 'decor', sid, blend, opacity,
+      flip, z, zi: zi(z), pixel: false, kind: 'decor', sid, blend, opacity, desat,
     });
   }
 
@@ -164,6 +164,11 @@
   // les skinSets de Teacher Story). Les surfaces (sol/murs/rue/estrade…) en dépendent.
   const skinSet = ((hash(klass.id) % 3) + 1);
   const sk = (n: string) => `${n}_s${skinSet}`;   // ex: 'ground' → 'ground_s2'
+
+  // Part des élèves qui ont leurs affaires (trousse + cartable) sur le bureau. CHOIX ASSUMÉ
+  // (le jeu les montre pour tous les assis) : on les réserve à une minorité pour l'ambiance
+  // « classe peu motivée ». Réglable d'un seul endroit.
+  const KIT_OUT_PCT = 35;
 
   const mursoloVariant = (y: number) => {
     const v =
@@ -225,15 +230,53 @@
     placeSym(items, sk('wall'), RWID + 1, RHEI + 1, {});
     placeSym(items, sk('street'), RWID + 1, 12, { zprio: 1 });
     placeSym(items, sk('abri'), RWID + 1, 12, { mcx: 300, mcy: -150, zprio: 1 });
-    if (skinSet === 3) placeSym(items, 'bonaparte', 0, 3, { mcy: 24, xr: 1.2 });  // buste (déco Histoire)
-    placeSym(items, 'coffre', 0, 4, { mode: 'B' });
-    placeSym(items, 'armoire2', 0, 6, { mode: 'B' });
-    placeSym(items, 'bureauordi', 1, 11, { mode: 'B', dy: -10, flip: true });
-    placeSym(items, 'worldmap', 4, 0, { mode: 'B', dy: -24 });
-    placeSym(items, 'coucou', 3, 0, { mode: 'B', dy: -6 });
-    placeSym(items, 'armoire', 11, 0, { mode: 'B', flip: true });
-    placeSym(items, 'tableglobe', 10, 10, { mode: 'B', dy: -8 });
-    placeSym(items, 'dessins', 9, 0, { mode: 'B', dy: 2 });
+    // Dessins d'élèves : position propre à chaque matière (Manager : drawings.setPos).
+    placeSym(items, 'dessins', skinSet === 1 ? 3 : skinSet === 2 ? 5 : 9, 0, { mode: 'B', dy: 2 });
+    // ===== Déco PROPRE À LA MATIÈRE (Manager.hx:2150-2305) — chaque salle est distincte. =====
+    if (skinSet === 1) {
+      // Sciences : mascotte Skully, fioles, ordi, table vide en +, vidéoprojecteur.
+      placeSym(items, 'skully', 0, 8, { mcy: 24, xr: 1.2, yr: 0.1 });          // iso.Skully
+      placeSym(items, 'potions', 0, 6, { mode: 'B' });
+      placeSym(items, 'potions', 1, 0, { mode: 'B', flip: true, dy: 2 });
+      placeSym(items, 'potions', 2, 0, { mode: 'B', flip: true, dy: 1 });
+      placeSym(items, 'potions', RWID - 1, 0, { mode: 'B', flip: true, dy: 2 });
+      placeSym(items, 'armoire', 0, 10, { mode: 'B' });
+      placeSym(items, 'ordi', 3, 0, { mode: 'B', dy: 10 });
+      placeSym(items, sk('tableeleve'), 7, 9, { mode: 'B', dx: -10, dy: -5 });  // table vide (frame 4)
+      placeSym(items, 'projo', 3, RHEI - 2, { mode: 'B' });                     // "off" (frame 8)
+    } else if (skinSet === 2) {
+      // Maths : armoires, table prof, feuilles, cadres de mathématiciens, hamster, aquarium,
+      // projecteur, placard, et des chaises EN VRAC dans le coin (0-2, positions aléatoires).
+      placeSym(items, 'armoire2', 0, 7, { mode: 'B' });
+      placeSym(items, 'armoire2', 9, 0, { mode: 'B', flip: true, dy: -2 });
+      placeSym(items, 'tablem', 0, 4, { mode: 'B', flip: true, dy: 2 });
+      placeSym(items, 'paper', 4, 9, { mode: 'B' });
+      placeSym(items, 'paper2', RWID - 3, RHEI - 3, { mode: 'B', dx: -3 });
+      placeSym(items, 'mathscadre', 0, 10, { mode: 'B', flip: true, dx: -3, dy: -6 });
+      placeSym(items, 'mathscadre2', 0, 9, { mode: 'B', flip: true, dx: -5, dy: -6 });
+      placeSym(items, 'hamster', 1, 0, { mode: 'B' });
+      placeSym(items, 'projo', RWID - 3, RHEI - 3, { mode: 'B' });
+      placeSym(items, 'armoire', 0, 6, { mode: 'B' });
+      let cxv = 2;                                                              // chaises du coin
+      const nch = hash(klass.id + 'corner') % 3;                               // 0..2 (dayRand.random(3))
+      for (let k = 0; k < nch; k++) {
+        const xr = 0.5 + (hash(klass.id + 'cx' + k) % 41) / 100;               // 0.5..0.9
+        const yr = 0.5 + (hash(klass.id + 'cy' + k) % 31) / 100;               // 0.5..0.8
+        placeSym(items, 'chaiseeleve', cxv, 0, { mode: 'B', xr, yr });
+        cxv += (hash(klass.id + 'cd' + k) % 2) + 1;
+      }
+      placeSym(items, 'aquarium', 7, 0, { mode: 'B' });
+    } else {
+      // Histoire-géo : buste de Napoléon, coffre, mappemonde, coucou, globe…
+      placeSym(items, 'bonaparte', 0, 3, { mcy: 24, xr: 1.2 });                // iso.Skully2
+      placeSym(items, 'coffre', 0, 4, { mode: 'B' });
+      placeSym(items, 'armoire2', 0, 6, { mode: 'B' });
+      placeSym(items, 'bureauordi', 1, 11, { mode: 'B', dy: -10, flip: true });
+      placeSym(items, 'worldmap', 4, 0, { mode: 'B', dy: -24 });
+      placeSym(items, 'coucou', 3, 0, { mode: 'B', dy: -6 });
+      placeSym(items, 'armoire', 11, 0, { mode: 'B', flip: true });
+      placeSym(items, 'tableglobe', 10, 10, { mode: 'B', dy: -8 });
+    }
     members.slice(0, SEATS.length).forEach((m, n) => {
       const { x, y } = SEATS[n];
       const idx = poolIndex(m);
@@ -243,16 +286,21 @@
       placeSym(items, 'chaiseeleve', x, y, { mode: 'B', dx: -10, dy: -5 });
       const u = studentOf(m);
       placeStudent(slots, m.id, idx, n, x, y, u, u ? fullName(u) : '?');
-      // Affaires sur le bureau (lib.Student.stuff @ tuile de la table) — OFFSETS EXACTS
-      // du jeu : trousse addFurnMc(-9,-10) puis cartable addFurnMc(-7,-8) ; mc.y += 29+dy.
-      // Couleur aléatoire par élève (le jeu : gotoAndStop(random(totalFrames))).
-      const male = META[idx].gender === 'm';
-      const tColor = hash(m.id + 'tr') % (male ? 4 : 3);
-      const cColor = hash(m.id + 'ca') % (male ? 5 : 4);
-      placeSym(items, `${male ? 'trousseg' : 'troussef'}_${tColor}`, x, y + 1,
-               { mode: 'B', dx: -9, dy: -10, zprio: 1.5 });
-      placeSym(items, `${male ? 'cartableg' : 'cartablef'}_${cColor}`, x, y + 1,
-               { mode: 'B', dx: -7, dy: -8, zprio: 2, opacity: 0.96 });
+      // Affaires sur le bureau (lib.Student.stuff @ tuile de la table) — OFFSETS EXACTS du jeu :
+      // trousse addFurnMc(-9,-10) puis cartable addFurnMc(-7,-8) ; mc.y += 29+dy. Couleur
+      // aléatoire (le jeu : gotoAndStop(random(totalFrames))) ; cartable DÉSATURÉ -0.4
+      // (Student.hx:165 Color.getSaturationFilter). CHOIX ASSUMÉ (pas du jeu, qui montre les
+      // affaires de tous les assis) : seule une minorité a sa trousse/son cartable sortis, pour
+      // l'ambiance « élèves qui en ont rien à foutre » → la plupart des bureaux restent nus.
+      if (hash(m.id + 'kit') % 100 < KIT_OUT_PCT) {
+        const male = META[idx].gender === 'm';
+        const tColor = hash(m.id + 'tr') % (male ? 4 : 3);
+        const cColor = hash(m.id + 'ca') % (male ? 5 : 4);
+        placeSym(items, `${male ? 'trousseg' : 'troussef'}_${tColor}`, x, y + 1,
+                 { mode: 'B', dx: -9, dy: -10, zprio: 1.5 });
+        placeSym(items, `${male ? 'cartableg' : 'cartablef'}_${cColor}`, x, y + 1,
+                 { mode: 'B', dx: -7, dy: -8, zprio: 2, desat: true });
+      }
     });
     const teacherSlot = teacherSlotOf(teacher, teacher ? fullName(teacher) : '');
     items.sort((a, b) => a.z - b.z);
@@ -437,7 +485,7 @@
         {#each scene.items as o (o.z)}
           {#if o.kind === 'decor'}
             <img class="sym" class:pixel={o.pixel} class:flip={o.flip} class:hl={!!o.sid && o.sid === hoveredSid} src={o.src} alt=""
-                 style="left:{o.left}px;top:{o.top}px;width:{o.w}px;height:{o.h}px;z-index:{o.zi}{o.opacity < 1 ? `;opacity:${o.opacity}` : ''}{o.blend ? ';mix-blend-mode:overlay' : ''}{o.mask ? `;-webkit-mask-image:${o.mask};mask-image:${o.mask}` : ''}" />
+                 style="left:{o.left}px;top:{o.top}px;width:{o.w}px;height:{o.h}px;z-index:{o.zi}{o.opacity < 1 ? `;opacity:${o.opacity}` : ''}{o.desat ? ';filter:saturate(0.6)' : ''}{o.blend ? ';mix-blend-mode:overlay' : ''}{o.mask ? `;-webkit-mask-image:${o.mask};mask-image:${o.mask}` : ''}" />
           {:else}
             <button class="actor" class:flip={o.flip} class:hl={!!o.sid && o.sid === hoveredSid}
                     style="left:{o.left}px;top:{o.top}px;width:{o.w}px;height:{o.h}px;z-index:{o.zi}"
