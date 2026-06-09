@@ -33,7 +33,12 @@ SKIN_TARGETS = [0xFBD7B5, 0xF0BE97, 0xD99A6E, 0xBE7B52, 0x9C6242]
 
 # frames needed by the chosen animations (blink + expressions), from Student.hx setAnim()
 NEEDED_EYES = [0, 1, 2, 7, 10]                       # 0 rest, 1 closed, 2 mid-blink, 7 bored, 10 wide
-NEEDED_MOUTH = sorted(set([0,1,2,4,7,19] + list(range(10,21))))  # expr frames + resting range 10..20
+NEEDED_MOUTH = sorted(set([0,1,2,4,7,19] + list(range(10,22))))  # expr frames + resting range
+# Bouche de REPOS : le jeu tire dans 10..20/21, mais certaines de ces frames sont des bouches
+# OUVERTES (m11/m13/m19/m20, f15/f16) qui, figées (rendu quasi statique), donnent une tête de
+# « surpris ». On ne garde que les bouches CALMES/fermées → cohérent avec l'ambiance « blasé ».
+CALM_M = [10, 12, 14, 15, 16, 17, 18]
+CALM_F = [10, 11, 12, 13, 14, 17, 18, 20]
 
 def cell(x,y,w,h): return A.crop((x,y,x+w,y+h))
 def hsv(c): return colorsys.rgb_to_hsv(((c>>16)&255)/255,((c>>8)&255)/255,(c&255)/255)
@@ -89,7 +94,8 @@ for n in range(N):
     scol = suf_shirt[rr.i(len(suf_shirt))]
     tcol = TROUSERS[rr.i(len(TROUSERS))]
     skin = SKIN_TARGETS[rr.i(len(SKIN_TARGETS))]
-    mouthRest = rr.rng(10,20)
+    calm = CALM_M if male else CALM_F
+    mouthRest = calm[rr.i(len(calm))]   # 1 tirage (comme rng) → corps/têtes inchangés
 
     body=Image.new("RGBA",(W,H),(0,0,0,0))
     body.alpha_composite(colorize_grays(cell(17,0,17,25),skin,0.65),(PL,PT))    # legs

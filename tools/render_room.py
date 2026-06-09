@@ -139,9 +139,9 @@ def _h(s):
     return h
 SMETA = SPOOL["students"]
 def add_student(idx, x, y):
-    sxp, syp, ax, ay = screen(x, y, 0.5, 0.95)      # getInCasePos() du jeu, sans offset
+    sxp, syp, ax, ay = screen(x, y, 0.5, 0.95)      # getInCasePos() du jeu (Student.hx:552)
     base = "/Users/arthur/talia-pedago/src/lib/assets/ts/students"
-    originx = sxp; originy = syp
+    originx = sxp; originy = syp - 3                 # yOffset = -3 (Student.hx:144)
     g = SMETA[idx]["gender"]; rest = SMETA[idx]["mouthRest"]
     # body + head + eyes(rest 0) + mouth(rest) stacked behind the desk
     for layer in [f"body{idx}", f"head{idx}", "eyes0", f"mouth_{g}{rest}"]:
@@ -156,14 +156,11 @@ NSTUD = int(_os.environ.get("NSTUD", "18"))
 for n,(x,y) in enumerate(SEATS[:NSTUD]):
     idx = _h(f"seat{x},{y}") % SN
     add_student(idx, x, y)
-    # affaires sur le bureau — offsets EXACTS du jeu (trousse -9,-10 ; cartable -7,-8).
-    # Choix appli : seulement ~35% des élèves ont leur kit sorti (ambiance peu motivée).
+    # affaires : trousse seule (offset exact -9,-10), ~35% des élèves. Cartable retiré.
     if _hh(f"seat{x},{y}kit") % 100 < 35:
         male = SMETA[idx]["gender"] == "m"
         tColor = _hh(f"{x},{y}tr") % (4 if male else 3)
-        cColor = _hh(f"{x},{y}ca") % (5 if male else 4)
         add(f"{'trousseg' if male else 'troussef'}_{tColor}", x, y+1, "B", dx=-9, dy=-10, zprio=1.5)
-        add(f"{'cartableg' if male else 'cartablef'}_{cColor}", x, y+1, "B", dx=-7, dy=-8, zprio=2)
 
 # ---- sun rays through windows (lib.Sun): Iso(RWID-1, y), addFurnMc(-4,2), OVERLAY, a=0.85 ----
 for yy in [3.7, 5.2, 7.2, 8.7]:
@@ -285,9 +282,10 @@ busp = _os2.environ.get("BUSP")
 if busp is not None:
     p = float(busp); y = -10 + p*35; cx = 15
     px = 185 + cx*14 - y*14; py = 30 + (cx+y)*7 + 29
-    bm = MAN["bus"]
+    bm = MAN["bus"]; f = 0.8     # BUS_SCALE (cadrage)
     bus = Image.open(f"{ASSET}/bus.png").convert("RGBA")
-    bx = int((px - bm["ox"] - FL) * Z); by = int((py - bm["oy"] - FT) * Z)
+    bus = bus.resize((int(bus.width*f), int(bus.height*f)), Image.NEAREST)
+    bx = int(((px - FL) - bm["ox"]*f) * Z); by = int(((py - FT) - bm["oy"]*f) * Z)
     canvas.alpha_composite(bus, (bx, by))
 
 out = "/tmp/room_render.png"

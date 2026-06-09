@@ -135,10 +135,14 @@
 
   function placeStudent(slots: Slot[], sid: string, idx: number, seat: number,
     cx: number, cy: number, user: BubbleUser | null, name: string) {
-    // Assis : getInCasePos() du jeu = { xr:0.5, yr:0.95 } (Student.hx), aucun offset.
-    const g = SG, xr = 0.5, yr = 0.95;
+    // Assis : getInCasePos() du jeu = { xr:0.5, yr:0.95 } (Student.hx:552).
+    // yOffset = -3 : propriété de base de l'entité Élève (Student.hx:144), appliquée
+    // au sprite via Iso.hx:894 (sprite.y = pt.y + yOffset). Elle remonte le corps ET les
+    // bras (overArms partage le même yOffset) de 3 px → l'élève ne s'enfonce plus dans la
+    // table, donc trousse/cartable cessent de chevaucher son corps.
+    const g = SG, xr = 0.5, yr = 0.95, Y_OFFSET = -3;
     const ax = cx - 0.5 + xr, ay = cy - 0.5 + yr;
-    const px = sx(ax, ay), py = sy(ax, ay) - heightMap(cx, cy);
+    const px = sx(ax, ay), py = sy(ax, ay) - heightMap(cx, cy) + Y_OFFSET;
     const left = (px - g.ox - FL) * S, top = (py - g.oy - FT) * S, w = g.w * S, h = g.h * S;
     const base = 100 + ax * 7 + ay * 7;
     const zBody = DP_ITEMS * 1e7 + (_i++) + 1000 * Math.floor(base);
@@ -286,20 +290,16 @@
       placeSym(items, 'chaiseeleve', x, y, { mode: 'B', dx: -10, dy: -5 });
       const u = studentOf(m);
       placeStudent(slots, m.id, idx, n, x, y, u, u ? fullName(u) : '?');
-      // Affaires sur le bureau (lib.Student.stuff @ tuile de la table) — OFFSETS EXACTS du jeu :
-      // trousse addFurnMc(-9,-10) puis cartable addFurnMc(-7,-8) ; mc.y += 29+dy. Couleur
-      // aléatoire (le jeu : gotoAndStop(random(totalFrames))) ; cartable DÉSATURÉ -0.4
-      // (Student.hx:165 Color.getSaturationFilter). CHOIX ASSUMÉ (pas du jeu, qui montre les
-      // affaires de tous les assis) : seule une minorité a sa trousse/son cartable sortis, pour
-      // l'ambiance « élèves qui en ont rien à foutre » → la plupart des bureaux restent nus.
+      // Affaires sur le bureau (lib.Student.stuff @ tuile de la table). Offset EXACT du jeu :
+      // trousse addFurnMc(-9,-10) ; mc.y += 29+dy. Couleur aléatoire (gotoAndStop(random)).
+      // CHOIX ASSUMÉ (pas du jeu, qui sort trousse + cartable pour tous les assis) : on ne
+      // garde QUE la trousse (le cartable se posait devant l'élève / débordait de la table et
+      // alourdissait), et seulement sur une minorité d'élèves → ambiance « peu motivée ».
       if (hash(m.id + 'kit') % 100 < KIT_OUT_PCT) {
         const male = META[idx].gender === 'm';
         const tColor = hash(m.id + 'tr') % (male ? 4 : 3);
-        const cColor = hash(m.id + 'ca') % (male ? 5 : 4);
         placeSym(items, `${male ? 'trousseg' : 'troussef'}_${tColor}`, x, y + 1,
                  { mode: 'B', dx: -9, dy: -10, zprio: 1.5 });
-        placeSym(items, `${male ? 'cartableg' : 'cartablef'}_${cColor}`, x, y + 1,
-                 { mode: 'B', dx: -7, dy: -8, zprio: 2, desat: true });
       }
     });
     const teacherSlot = teacherSlotOf(teacher, teacher ? fullName(teacher) : '');
@@ -440,11 +440,18 @@
   // ===== Bus : passe dans la rue de temps en temps (lib.Bus, trajet x=RWID+3, y -10→25) =====
   const busGeo = geo['bus'];
   const BUS_ZI = zi(DP_ITEMS * 1e7 + 20 * 10000 + 1000 * Math.floor(100 + (RWID + 3) * 7 + 8 * 7));
+  // CHOIX DE CADRAGE (pas du jeu) : le bus pleine taille écrase la vue serrée → on le réduit.
+  // Mise à l'échelle autour de son point d'ancrage pour qu'il reste sur la chaussée.
+  const BUS_SCALE = 0.8;
   let busP = $state(-1);   // -1 = inactif (caché) ; 0..1 = progression du passage
   function busPos(p: number) {
     const y = -10 + p * 35, cx = RWID + 3;
     const px = sx(cx, y), py = sy(cx, y) + 29;   // mc.y += 29 (Bus.hx)
-    return { left: (px - busGeo.ox - FL) * S, top: (py - busGeo.oy - FT) * S, w: busGeo.w * S, h: busGeo.h * S };
+    const f = BUS_SCALE;
+    return {
+      left: ((px - FL) - busGeo.ox * f) * S, top: ((py - FT) - busGeo.oy * f) * S,
+      w: busGeo.w * S * f, h: busGeo.h * S * f,
+    };
   }
   $effect(() => {
     let raf = 0, to: ReturnType<typeof setTimeout>;
