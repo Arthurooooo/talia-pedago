@@ -61,10 +61,16 @@
   let hoveredSid = $state<string | null>(null);
   let audioEl = $state<HTMLAudioElement | null>(null);
   let musicOn = $state(false);
-  function toggleMusic() {
-    musicOn = !musicOn;
-    if (audioEl) { audioEl.volume = 0.4; musicOn ? audioEl.play() : audioEl.pause(); }
+  let musicTried = false;
+  function setMusic(on: boolean) {
+    if (!audioEl) return;
+    audioEl.volume = 0.35;
+    if (on) audioEl.play().then(() => { musicOn = true; }).catch(() => { musicOn = false; });
+    else { audioEl.pause(); musicOn = false; }
   }
+  const toggleMusic = () => setMusic(!musicOn);
+
+  let page = $state(0);   // pagination des élèves (la salle a SEATS.length sièges)
 
   function hash(s: string){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return Math.abs(h);}
 
@@ -77,6 +83,13 @@
     } catch (e: any) { error = String(e); } finally { loading = false; }
   });
 
+  // Lance la musique au 1er geste utilisateur dans la salle (les navigateurs bloquent
+  // l'autoplay sonore tant qu'il n'y a pas d'interaction). Une seule tentative.
+  function armMusicAutoplay() {
+    if (musicTried) return; musicTried = true;
+    setMusic(true);
+  }
+
   // ===== Projection isométrique EXACTE du jeu (Iso.hx) =====
   const S = 2.25;   // échelle d'affichage (25% plus petit qu'avant : 3 → 2.25)
   const RWID = 12, RHEI = 12;
@@ -85,6 +98,13 @@
   const SEATS: { x: number; y: number }[] = [];
   for (const y of SEAT_Y) for (const x of SEAT_X) SEATS.push({ x, y });
   const COLS = SEAT_X.length;
+
+  // Pagination : on remplit les 18 sièges, page par page, pour voir TOUTE la classe.
+  const PER_PAGE = SEATS.length;
+  const pageCount = $derived(Math.max(1, Math.ceil(members.length / PER_PAGE)));
+  $effect(() => { if (page > pageCount - 1) page = 0; });   // clamp si la classe change
+  const pageMembers = $derived(members.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE));
+  const goPage = (d: number) => { if (pageCount > 1) page = (page + d + pageCount) % pageCount; };
 
   const heightMap = (cx: number, cy: number) => (cx >= 3 && cx < 9 && cy >= 9 && cy < 12 ? 3 : 0);
   const sx = (ax: number, ay: number) => 185 + ax * 14 - ay * 14;
@@ -286,7 +306,7 @@
       placeSym(items, 'armoire', 11, 0, { mode: 'B', flip: true });
       placeSym(items, 'tableglobe', 10, 10, { mode: 'B', dy: -8 });
     }
-    members.slice(0, SEATS.length).forEach((m, n) => {
+    pageMembers.forEach((m, n) => {
       const { x, y } = SEATS[n];
       const idx = poolIndex(m);
       // Table à la tuile (x,y+1) : addFurnMc(-6,-8) ; FRAME selon la matière
@@ -324,7 +344,7 @@
   let ctr: { wait: number; blink: number }[] = [];
 
   $effect(() => {
-    const n = Math.min(members.length, SEATS.length);
+    const n = Math.min(pageMembers.length, SEATS.length);
     if (anim.length === n) return;
     const a: AnimSt[] = []; ctr = [];
     for (let i = 0; i < n; i++) {
@@ -410,13 +430,24 @@
   });
 </script>
 
-<div class="room">
+<svelte:window onkeydown={(e) => {
+  if (e.key === 'ArrowLeft') goPage(-1);
+  else if (e.key === 'ArrowRight') goPage(1);
+}} />
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+<div class="room" onpointerdown={armMusicAutoplay}>
   <header class="bar">
     <button class="back" onclick={onBack}>← Retour</button>
     <h2>{klass.name ?? 'Classe'}</h2>
     <span class="count">{members.length} élèves</span>
-    {#if members.length > SEATS.length}<span class="warn">{members.length - SEATS.length} hors écran</span>{/if}
-    <button class="music" class:on={musicOn} onclick={toggleMusic} title="Musique d'ambiance (thème de classe)">{musicOn ? '🔊' : '🔈'}</button>
+    {#if pageCount > 1}
+      <div class="pager" title="Flèches ← → pour changer de page">
+        <button class="pg" onclick={() => goPage(-1)} aria-label="Page précédente">‹</button>
+        <span class="pg-label">{page * PER_PAGE + 1}–{Math.min((page + 1) * PER_PAGE, members.length)} / {members.length}</span>
+        <button class="pg" onclick={() => goPage(1)} aria-label="Page suivante">›</button>
+      </div>
+    {/if}
+    <button class="music" class:on={musicOn} onpointerdown={(e) => e.stopPropagation()} onclick={toggleMusic} title="Musique d'ambiance (thème de classe)">{musicOn ? '🔊 Musique' : '🔈 Musique'}</button>
   </header>
   <audio bind:this={audioEl} src={musicUrl} loop preload="none"></audio>
 
@@ -494,10 +525,15 @@
   .back { background:#f7e7c8; color:#3d2c1e; border:0; padding:6px 12px; border-radius:4px; cursor:pointer; font:700 12px system-ui; box-shadow:0 2px 0 #3d2c1e; }
   .back:hover { background:#fff8ec; }
   .count { background:#f7e7c8; color:#3d2c1e; padding:3px 10px; border-radius:999px; font:700 11px system-ui; }
-  .music { background:#f7e7c8; color:#3d2c1e; border:0; width:30px; height:30px; border-radius:6px; cursor:pointer; font-size:14px; box-shadow:0 2px 0 #3d2c1e; }
+  .music { background:#f7e7c8; color:#3d2c1e; border:0; padding:6px 12px; height:30px; border-radius:6px; cursor:pointer; font:700 12px system-ui; box-shadow:0 2px 0 #3d2c1e; white-space:nowrap; }
   .music:hover { background:#fff8ec; }
   .music.on { background:#f5cf6a; }
-  .warn { background:#c97b2c; color:#fff8ec; padding:3px 10px; border-radius:999px; font:700 11px system-ui; }
+
+  /* Pagination des élèves */
+  .pager { display:flex; align-items:center; gap:6px; background:#4a3625; border:2px solid #3d2c1e; border-radius:999px; padding:2px; }
+  .pg { width:26px; height:26px; border:0; border-radius:50%; cursor:pointer; background:#f7e7c8; color:#3d2c1e; font:800 16px system-ui; line-height:1; display:flex; align-items:center; justify-content:center; }
+  .pg:hover { background:#fff8ec; }
+  .pg-label { font:800 11px system-ui; color:#f7e7c8; padding:0 4px; min-width:74px; text-align:center; letter-spacing:0.02em; }
 
   .viewport { display:flex; justify-content:center; padding:24px 20px 60px; overflow:auto; isolation:isolate; }
   .stage { position:relative; flex:none; overflow:hidden; background:#1d2129; box-shadow:0 8px 30px rgba(0,0,0,0.4); }
