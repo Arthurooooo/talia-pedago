@@ -100,7 +100,17 @@
   </header>
 
   {#if loading}
-    <div class="hint">Chargement de l'école…</div>
+    <div class="loader-head">
+      <span class="spinner" aria-hidden="true"></span> Chargement des classes…
+    </div>
+    <div class="map" aria-hidden="true">
+      {#each Array(8) as _, i}
+        <div class="card-skeleton" style="animation-delay:{i * 0.08}s">
+          <div class="sk-avatar"></div>
+          <div class="sk-lines"><div class="sk-line w70"></div><div class="sk-line w45"></div></div>
+        </div>
+      {/each}
+    </div>
   {:else if error}
     <div class="error">⚠️ {error}</div>
   {:else if !filtered.length}
@@ -207,4 +217,32 @@
     font: 700 14px system-ui, sans-serif;
   }
   .error { color: #ffb4b4; }
+
+  /* ===== Loader (chargement des classes) ===== */
+  .loader-head {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 28px 16px 4px; color: #f7e7c8; font: 700 13px system-ui, sans-serif;
+  }
+  .spinner {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 3px solid rgba(247,231,200,0.35); border-top-color: #f7e7c8;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .card-skeleton {
+    width: 100%; max-width: 260px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 14px;
+    background: #6b513b; border: 2px solid #3d2c1e; border-radius: 12px;
+    padding: 16px; box-shadow: 0 3px 0 #3d2c1e;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .sk-avatar { width: 48px; height: 48px; border-radius: 50%; background: #836548; flex: none; }
+  .sk-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .sk-line { height: 11px; border-radius: 6px; background: #836548; }
+  .sk-line.w70 { width: 70%; }
+  .sk-line.w45 { width: 45%; }
+  @keyframes pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner, .card-skeleton { animation: none; }
+  }
 </style>

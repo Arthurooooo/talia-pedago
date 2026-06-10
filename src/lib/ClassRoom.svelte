@@ -30,20 +30,18 @@
   // NB: les options de import.meta.glob doivent être un littéral inline (Vite les lit statiquement).
   const BODY = indexed(import.meta.glob('./assets/ts/students/body*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>);
   const HEAD = indexed(import.meta.glob('./assets/ts/students/head*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>);
+  // Bras par humeur (Student.hx updatePose) : 8 mains posées / 9 avachi / 10 mains jointes.
   const ARMS_FOLD = indexed(import.meta.glob('./assets/ts/students/armsfold*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>);
-  const ARMS_UP = indexed(import.meta.glob('./assets/ts/students/armsup*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>);
-  // écriture : 2 frames par élève (armswrite{n}_{f}.png)
-  const ARMS_WRITE: string[][] = [];
-  for (const [k, v] of Object.entries(import.meta.glob('./assets/ts/students/armswrite*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>)) {
-    const m = k.match(/armswrite(\d+)_(\d+)\.png$/);
-    if (m) { const n = +m[1], f = +m[2]; (ARMS_WRITE[n] ||= [])[f] = v; }
-  }
+  const ARMS_BORED = indexed(import.meta.glob('./assets/ts/students/armsbored*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>);
+  const ARMS_ENGAGED = indexed(import.meta.glob('./assets/ts/students/armsengaged*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>);
   const eyesG = import.meta.glob('./assets/ts/students/eyes*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
   const mouthG = import.meta.glob('./assets/ts/students/mouth_*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
   const EYES = frameMap(eyesG, /eyes(\d+)\.png$/);
   const MOUTH_M = frameMap(mouthG, /mouth_m(\d+)\.png$/);
   const MOUTH_F = frameMap(mouthG, /mouth_f(\d+)\.png$/);
-  type Meta = { gender: 'm' | 'f'; mouthRest: number };
+  type Mood = 'engaged' | 'neutral' | 'bored';
+  type ArmPose = 'fold' | 'bored' | 'engaged';
+  type Meta = { gender: 'm' | 'f'; mouthRest: number; mood: Mood };
   const META = poolMeta.students as Meta[];
   const SG = poolMeta.geo as Geo;
   // Index du pool regroupés par genre du sprite → on peut choisir un sprite assorti au prénom.
@@ -107,9 +105,15 @@
   };
   type Slot = {
     sid: string; seat: number; left: number; top: number; w: number; h: number; zi: number; ziArms: number;
-    body: string; head: string; armsFold: string; armsUp: string; armsWrite: string[];
-    gender: 'm' | 'f'; mouthRest: number; user: BubbleUser | null; name: string; sprites: string[];
+    body: string; head: string; armsFold: string; armsBored: string; armsEngaged: string;
+    gender: 'm' | 'f'; restMouth: number; restArms: ArmPose;
+    user: BubbleUser | null; name: string; sprites: string[];
   };
+
+  // Expression de repos selon l'humeur (updatePose, Student.hx:707-718).
+  const moodMouth = (m: Meta) => (m.mood === 'engaged' ? 2 : m.mood === 'bored' ? 3 : m.mouthRest);
+  const moodArms = (m: Meta): ArmPose => (m.mood === 'engaged' ? 'engaged' : m.mood === 'bored' ? 'bored' : 'fold');
+  const armsPng = (idx: number, p: ArmPose) => (p === 'engaged' ? ARMS_ENGAGED : p === 'bored' ? ARMS_BORED : ARMS_FOLD)[idx];
 
   let _i = 0;
   function placeSym(items: Item[], name: string, cx: number, cy: number, opts: {
@@ -148,10 +152,11 @@
     const zBody = DP_ITEMS * 1e7 + (_i++) + 1000 * Math.floor(base);
     const zArms = DP_ITEMS * 1e7 + (_i++) + 1000 * (5 + Math.floor(base));  // overArms layer=1
     const m = META[idx];
-    const sprites = [BODY[idx], HEAD[idx], eyesSrc(0), mouthSrc(m.gender, m.mouthRest), ARMS_FOLD[idx]];
+    const restMouth = moodMouth(m), restArms = moodArms(m);
+    const sprites = [BODY[idx], HEAD[idx], eyesSrc(0), mouthSrc(m.gender, restMouth), armsPng(idx, restArms)];
     slots.push({ sid, seat, left, top, w, h, zi: zi(zBody), ziArms: zi(zArms),
-      body: BODY[idx], head: HEAD[idx], armsFold: ARMS_FOLD[idx], armsUp: ARMS_UP[idx], armsWrite: ARMS_WRITE[idx] ?? [ARMS_FOLD[idx]],
-      gender: m.gender, mouthRest: m.mouthRest, user, name, sprites });
+      body: BODY[idx], head: HEAD[idx], armsFold: ARMS_FOLD[idx], armsBored: ARMS_BORED[idx], armsEngaged: ARMS_ENGAGED[idx],
+      gender: m.gender, restMouth, restArms, user, name, sprites });
   }
 
   type TeacherSlot = { left: number; top: number; w: number; h: number; zi: number; user: BubbleUser | null; name: string };
@@ -307,100 +312,38 @@
     return { items, slots, teacherSlot };
   });
 
-  // ===== Moteur d'animations (Student.hx) =====
-  // lookAt (tête) + clignement + expressions + bavardages (Speak) + main levée (handUp).
-  const EXPR = [
-    { eyes: 1, mouth: 0, dur: 8 },    // bâillement
-    { eyes: 0, mouth: 2, dur: 14 },   // sourire
-    { eyes: 10, mouth: 1, dur: 12 },  // content
-    { eyes: 0, mouth: 4, dur: 12 },   // grand sourire
-    { eyes: 10, mouth: 0, dur: 9 },   // surprise
-    { eyes: 7, mouth: 19, dur: 18 },  // ennui
-    { eyes: 1, mouth: 0, dur: 16 },   // fatigué
-    { eyes: 10, mouth: 7, dur: 9 },   // tire la langue
-    { eyes: 1, mouth: 0, dur: 3 },    // éternuement (SA_Sneeze : yeux fermés + bouche, bref)
-  ];
+  // ===== Anim d'attente FIDÈLE au jeu (Student.hx:905-913) =====
+  // L'expression de repos (bouche + bras) vient de l'humeur et NE BOUGE PAS (cf. updatePose).
+  // Par-dessus, toutes les irnd(30,100) frames (≈ rnd(10,33) ticks de 100 ms) le jeu fait
+  // lookAt(irnd(0,2)-1, 0) — la tête regarde gauche / centre / droite — et un clignement.
   const rnd = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
-
-  // Cadences calées sur le jeu (30 fps, tick=100ms ⇒ ~3 frames/tick) :
-  //  - look+blink ambiant : toutes les 1–3,3 s (irnd(30,100) frames du jeu) → 10–33 ticks.
-  //  - expressions/bavardage/main levée : PAS ambiants dans le jeu (events de gameplay),
-  //    donc rares ici : un "event" toutes les 40–100 s par élève.
-  const LOOK_MIN = 20, LOOK_MAX = 55;        // clignement ambiant toutes les ~2–5,5 s
-  const TURN_CHANCE = 0.3;                    // … dont ~30% tournent vraiment la tête (le reste = centré)
-  const EVENT_MIN = 400, EVENT_MAX = 1000;
-  type AnimSt = { dir: -1 | 0 | 1; eyes: number; mouth: number; arms: 'fold' | 'up' | 'write'; wf: number; down: boolean };
+  const LOOK_MIN = 10, LOOK_MAX = 33;
+  type Dir = -1 | 0 | 1;
+  type AnimSt = { dir: Dir; eyes: number };
   let anim = $state<AnimSt[]>([]);
-  let ctr: { wait: number; blink: number; expr: number; chat: number; hand: number; talk: number; event: number; write: number; wt: number }[] = [];
-  let seatRest: number[] = [];      // bouche de repos par élève (frame 10-20, comme le jeu)
+  let ctr: { wait: number; blink: number }[] = [];
 
-  // Fidèle au jeu (Student.hx:431) : tous les élèves ont les yeux frame 0 au repos.
-  // La variété des visages vient de la TÊTE (4) + cheveux + COULEUR DE BOUCHE (frame 10-20),
-  // pas d'yeux différents (setEyesColor est un no-op commenté dans le jeu).
   $effect(() => {
     const n = Math.min(members.length, SEATS.length);
     if (anim.length === n) return;
-    const a: AnimSt[] = []; ctr = []; seatRest = [];
+    const a: AnimSt[] = []; ctr = [];
     for (let i = 0; i < n; i++) {
-      const meta = META[poolIndex(members[i])];
-      a.push({ dir: 0, eyes: 0, mouth: meta.mouthRest, arms: 'fold', wf: 0, down: false });
-      ctr.push({ wait: rnd(LOOK_MIN, LOOK_MAX), blink: 0, expr: 0, chat: 0, hand: 0, talk: 0,
-        event: rnd(100, EVENT_MAX), write: 0, wt: 0 });   // décalage initial pour désynchroniser
-      seatRest.push(meta.mouthRest);
+      a.push({ dir: 0, eyes: 0 });
+      ctr.push({ wait: rnd(LOOK_MIN, LOOK_MAX), blink: 0 });   // désync initial
     }
     anim = a;
   });
-
-  // bavardage : deux voisins de rang qui se tournent l'un vers l'autre et "parlent"
-  function tryChat(i: number, s: AnimSt, a: AnimSt[], n: number): boolean {
-    const col = i % COLS;
-    const cands: number[] = [];
-    if (col > 0) cands.push(i - 1);
-    if (col < COLS - 1 && i + 1 < n) cands.push(i + 1);
-    const free = cands.filter((j) => ctr[j].chat === 0 && ctr[j].hand === 0 && ctr[j].expr === 0);
-    if (!free.length) return false;
-    const j = free[rnd(0, free.length - 1)];
-    const dur = rnd(20, 45);
-    ctr[i].chat = dur; ctr[j].chat = dur;
-    ctr[i].talk = rnd(1, 3); ctr[j].talk = rnd(1, 3);
-    s.dir = j > i ? 1 : -1; s.eyes = 0; s.hand = false;       // regarde vers le voisin
-    a[j] = { ...a[j], dir: j > i ? -1 : 1, eyes: 0, hand: false };
-    return true;
-  }
 
   function tick() {
     const n = anim.length; if (!n) return;
     const a = anim.slice();
     for (let i = 0; i < n; i++) {
       const c = ctr[i]; const s = { ...a[i] };
-      // états temporisés en cours
-      if (c.blink > 0) { c.blink--; if (c.blink === 0 && c.expr === 0 && c.chat === 0) s.eyes = 0; }
-      if (c.expr > 0) { c.expr--; if (c.expr === 0) { s.eyes = 0; s.mouth = seatRest[i]; } }
-      if (c.hand > 0) { c.hand--; if (c.hand === 0) s.arms = 'fold'; }
-      if (c.write > 0) {                            // écriture : main qui bouge + tête baissée
-        c.write--;
-        if (--c.wt <= 0) { s.wf = s.wf ? 0 : 1; c.wt = rnd(3, 6); }
-        if (c.write === 0) { s.arms = 'fold'; s.down = false; }
-      }
-      if (c.chat > 0) {
-        c.chat--;
-        if (--c.talk <= 0) { s.mouth = s.mouth === seatRest[i] ? 0 : seatRest[i]; c.talk = rnd(2, 4); }
-        if (c.chat === 0) { s.mouth = seatRest[i]; s.dir = 0; }
-      }
-      const idle = c.expr === 0 && c.chat === 0 && c.hand === 0 && c.write === 0;
-      // events RARES (expression/éternuement / bavardage / écriture / main levée) — pas ambiants dans le jeu
-      if (idle && --c.event <= 0) {
-        const r = Math.random();
-        if (r < 0.34) { const e = EXPR[rnd(0, EXPR.length - 1)]; c.expr = e.dur; s.eyes = e.eyes; s.mouth = e.mouth; }
-        else if (r < 0.56) { tryChat(i, s, a, n); }
-        else if (r < 0.80) { c.write = rnd(30, 70); c.wt = rnd(3, 6); s.arms = 'write'; s.down = true; s.dir = 0; s.eyes = 0; s.mouth = seatRest[i]; s.wf = 0; }
-        else { c.hand = rnd(15, 32); s.arms = 'up'; s.dir = 0; s.eyes = 0; s.mouth = seatRest[i]; }
-        c.event = rnd(EVENT_MIN, EVENT_MAX);
-      }
-      // clignement ambiant (fréquent) + virage de tête OCCASIONNEL — uniquement au repos.
-      else if (idle && --c.wait <= 0) {
-        if (Math.random() < TURN_CHANCE) { const r = Math.random(); s.dir = (r < 0.5 ? -1 : 1) as -1 | 0 | 1; }
-        else { s.dir = 0; }
+      // clignement en cours : yeux 1 → 2 → 0 (anim "eyes_blink" = [1,2,0])
+      if (c.blink > 0) { c.blink--; s.eyes = c.blink === 1 ? 2 : c.blink === 0 ? 0 : 1; }
+      // anim d'attente : tourne la tête (gauche/centre/droite à parts égales) + cligne
+      if (--c.wait <= 0) {
+        s.dir = (rnd(0, 2) - 1) as Dir;                 // lookAt(irnd(0,2)-1, 0)
         if (s.eyes === 0) { c.blink = 2; s.eyes = 1; }
         c.wait = rnd(LOOK_MIN, LOOK_MAX);
       }
@@ -413,22 +356,19 @@
     return () => clearInterval(id);
   });
 
-  // lookAt : flip de la tête autour du centre du VISAGE (≈39.6% de la largeur du canevas 24px),
-  // pas du centre du canevas — sinon la tête se décale trop.
+  // lookAt FIDÈLE (Student.hx:348-378). Origine = centre du visage (≈39.6% du canevas 24px).
   const FACE_ORIGIN = ((1 + 8.5) / 24 * 100).toFixed(1) + '%';
-  // tête : flip droite (autour du visage), petit décalage gauche, et inclinaison vers le bas (écriture)
+  // Regard à DROITE : la tête entière se retourne (head.scaleX = -1) et se décale de +2 px.
   function headTransform(a: AnimSt | undefined): string {
-    if (!a) return 'none';
-    const p: string[] = [];
-    if (a.down) p.push(`translate(${-0.5 * S}px, ${1 * S}px)`);   // lookAt(0,1) : tête baissée
-    if (a.dir === 1) p.push('scaleX(-1)');
-    else if (a.dir === -1) p.push(`translateX(${-1 * S}px)`);
-    return p.length ? p.join(' ') : 'none';
+    return a && a.dir === 1 ? `translateX(${2 * S}px) scaleX(-1)` : 'none';
   }
-  const armsSrc = (st: Slot, a: AnimSt | undefined) =>
-    a?.arms === 'up' ? st.armsUp :
-    a?.arms === 'write' ? (st.armsWrite[a.wf] ?? st.armsWrite[0]) :
-    st.armsFold;
+  // Regard à GAUCHE : seul le VISAGE (yeux + bouche) glisse de -1 px (la tête/les cheveux ne
+  // bougent pas) → mouvement subtil, plus de "saut" de toute la tête.
+  function faceTransform(a: AnimSt | undefined): string {
+    return a && a.dir === -1 ? `translateX(${-1 * S}px)` : 'none';
+  }
+  const armsSrc = (st: Slot) =>
+    st.restArms === 'engaged' ? st.armsEngaged : st.restArms === 'bored' ? st.armsBored : st.armsFold;
 
   // ===== Prof : pose unique, face aux élèves (il enseigne) =====
   // En iso, les élèves sont en HAUT-DROITE du prof → face aux élèves = james_back retourné.
@@ -513,11 +453,13 @@
             <img class="layer" src={st.body} alt="" />
             <span class="head" style="transform-origin:{FACE_ORIGIN} 50%;transform:{headTransform(a)}">
               <img class="layer" src={st.head} alt="" />
-              <img class="layer" src={eyesSrc(a?.eyes ?? 0)} alt="" />
-              <img class="layer" src={mouthSrc(st.gender, a?.mouth ?? st.mouthRest)} alt="" />
+              <span class="face" style="transform-origin:{FACE_ORIGIN} 50%;transform:{faceTransform(a)}">
+                <img class="layer" src={eyesSrc(a?.eyes ?? 0)} alt="" />
+                <img class="layer" src={mouthSrc(st.gender, st.restMouth)} alt="" />
+              </span>
             </span>
           </button>
-          <img class="sym pixel" class:hl={st.sid === hoveredSid} src={armsSrc(st, a)} alt=""
+          <img class="sym pixel" class:hl={st.sid === hoveredSid} src={armsSrc(st)} alt=""
                style="left:{st.left}px;top:{st.top}px;width:{st.w}px;height:{st.h}px;z-index:{st.ziArms}" />
         {/each}
         {#if scene.teacherSlot}
@@ -565,7 +507,7 @@
   .actor img { display:block; image-rendering:pixelated; pointer-events:none; }
   .actor:disabled { cursor:default; }
   .student .layer { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated; }
-  .student .head { position:absolute; inset:0; }
+  .student .head, .student .face { position:absolute; inset:0; }
   .pixel { image-rendering:pixelated; }
   .flip { transform:scaleX(-1); }
   .sym.hl, .actor.hl { filter: drop-shadow(0 0 1px #ffe27a) drop-shadow(0 0 2px #ffd24a) brightness(1.08); }

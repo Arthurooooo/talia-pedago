@@ -33,12 +33,16 @@ SKIN_TARGETS = [0xFBD7B5, 0xF0BE97, 0xD99A6E, 0xBE7B52, 0x9C6242]
 
 # frames needed by the chosen animations (blink + expressions), from Student.hx setAnim()
 NEEDED_EYES = [0, 1, 2, 7, 10]                       # 0 rest, 1 closed, 2 mid-blink, 7 bored, 10 wide
-NEEDED_MOUTH = sorted(set([0,1,2,4,7,19] + list(range(10,22))))  # expr frames + resting range
-# Bouche de REPOS : le jeu tire dans 10..20/21, mais certaines de ces frames sont des bouches
-# OUVERTES (m11/m13/m19/m20, f15/f16) qui, figées (rendu quasi statique), donnent une tête de
-# « surpris ». On ne garde que les bouches CALMES/fermées → cohérent avec l'ambiance « blasé ».
+NEEDED_MOUTH = sorted(set([0,1,2,3,4,7,19] + list(range(10,22))))  # +3 (moue d'ennui)
+# Bouche de REPOS NEUTRE : le jeu tire dans 10..20/21, mais certaines frames sont des bouches
+# OUVERTES (m11/m13/m19/m20, f15/f16) qui, figées, donnent une tête de « surpris ». On ne garde
+# que les bouches CALMES/fermées.
 CALM_M = [10, 12, 14, 15, 16, 17, 18]
 CALM_F = [10, 11, 12, 13, 14, 17, 18, 20]
+# Humeur de repos (updatePose, Student.hx:707-718) : élève attentif (boredom<=0) → sourit
+# (bouche 2, bras 10) ; élève blasé (boredom>=4) → moue (bouche 3, bras 9) ; sinon neutre
+# (bouche de repos, bras 8). Sans données de boredom, on tire une humeur déterministe par élève.
+#   ~38% attentifs (sourire) / ~37% neutres / ~25% blasés.
 
 def cell(x,y,w,h): return A.crop((x,y,x+w,y+h))
 def hsv(c): return colorsys.rgb_to_hsv(((c>>16)&255)/255,((c>>8)&255)/255,(c&255)/255)
@@ -109,13 +113,12 @@ for n in range(N):
     head.alpha_composite(colorize_grays(cell(hairf*23,hairY,23,17),hcol),(PL,PT-1))    # hair (aligned)
     head.save(f"{OUT}/head{n}.png")
 
-    arms=Image.new("RGBA",(W,H),(0,0,0,0))
-    arms.alpha_composite(colorize_grays(cell(8*17,64,17,25),skin,0.65),(PL,PT))        # frame 8 (bras croisés)
-    arms.save(f"{OUT}/armsfold{n}.png")
-
-    arms11=Image.new("RGBA",(W,H),(0,0,0,0))
-    arms11.alpha_composite(colorize_grays(cell(11*17,64,17,25),skin,0.65),(PL,PT))     # frame 11 (main levée)
-    arms11.save(f"{OUT}/armsup{n}.png")
+    # bras par humeur (arms_short) : 8 mains posées (neutre), 9 avachi (blasé),
+    # 10 mains jointes (attentif), 11 main levée.
+    for label, af in [("fold", 8), ("bored", 9), ("engaged", 10), ("up", 11)]:
+        a=Image.new("RGBA",(W,H),(0,0,0,0))
+        a.alpha_composite(colorize_grays(cell(af*17,64,17,25),skin,0.65),(PL,PT))
+        a.save(f"{OUT}/arms{label}{n}.png")
 
     # écriture : 2 frames (14 & 16) de l'anim "write" — mains sur la table avec le crayon
     for wi, wf in enumerate([14, 16]):
@@ -123,7 +126,9 @@ for n in range(N):
         aw.alpha_composite(colorize_grays(cell(wf*17,64,17,25),skin,0.65),(PL,PT))
         aw.save(f"{OUT}/armswrite{n}_{wi}.png")
 
-    studs.append({"gender":"m" if male else "f", "mouthRest":mouthRest})
+    mr = rr.i(100)   # humeur (tirage APRÈS mouthRest → corps/têtes inchangés)
+    mood = "engaged" if mr < 38 else "bored" if mr < 63 else "neutral"
+    studs.append({"gender":"m" if male else "f", "mouthRest":mouthRest, "mood":mood})
 
 json.dump({"geo":geo,"count":N,"students":studs,"eyes":NEEDED_EYES,"mouth":NEEDED_MOUTH},
           open(OUT+"/_pool.json","w"))

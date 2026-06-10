@@ -142,15 +142,17 @@ def add_student(idx, x, y):
     sxp, syp, ax, ay = screen(x, y, 0.5, 0.95)      # getInCasePos() du jeu (Student.hx:552)
     base = "/Users/arthur/talia-pedago/src/lib/assets/ts/students"
     originx = sxp; originy = syp - 3                 # yOffset = -3 (Student.hx:144)
-    g = SMETA[idx]["gender"]; rest = SMETA[idx]["mouthRest"]
-    # body + head + eyes(rest 0) + mouth(rest) stacked behind the desk
+    g = SMETA[idx]["gender"]; mood = SMETA[idx].get("mood", "neutral")
+    # expression de repos par humeur (updatePose) : sourire / moue / neutre
+    rest = 2 if mood == "engaged" else 3 if mood == "bored" else SMETA[idx]["mouthRest"]
+    armf = "armsengaged" if mood == "engaged" else "armsbored" if mood == "bored" else "armsfold"
     for layer in [f"body{idx}", f"head{idx}", "eyes0", f"mouth_{g}{rest}"]:
         z = DP_ITEMS*10**7 + (_idx[0]) + 1000*int(100+ax*7+ay*7); _idx[0]+=1
         items.append(dict(asset="__"+f"{base}/{layer}.png", originx=originx, originy=originy,
                           bucket=DP_ITEMS, key=z % 10**7, flip=False, sg=SG))
     # overArms: layer 1 -> +5*1000, renders in front of desk
     zarms = DP_ITEMS*10**7 + (_idx[0]) + 1000*(5 + int(100+ax*7+ay*7)); _idx[0]+=1
-    items.append(dict(asset="__"+f"{base}/armsfold{idx}.png", originx=originx, originy=originy,
+    items.append(dict(asset="__"+f"{base}/{armf}{idx}.png", originx=originx, originy=originy,
                       bucket=DP_ITEMS, key=zarms % 10**7, flip=False, sg=SG))
 NSTUD = int(_os.environ.get("NSTUD", "18"))
 for n,(x,y) in enumerate(SEATS[:NSTUD]):
