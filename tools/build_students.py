@@ -56,10 +56,32 @@ def colorize_grays(img, color, mid=0.5):
             if a==0: continue
             gray=(0.299*r+0.587*g+0.114*b)/255
             v=min(1.0, tv*(gray/mid))
-            s=min(1.0, ts*(0.85+0.25*(1-gray)))
+            s=min(1.0, ts*(0.78+0.18*(1-gray)))   # un peu moins saturé (jamais de boost)
             rr,gg,bb=colorsys.hsv_to_rgb(th,s,v)
             op[x,y]=(int(rr*255),int(gg*255),int(bb*255),a)
     return out
+
+# Filtre PEAU du jeu : getSkinFilter() = Color.getColorizeMatrixFilter(skinColor, 0.6, 0.4),
+# appliqué à skin.head — donc, en Flash, à TOUS ses enfants (visage + cheveux + yeux + bouche).
+# Effet : out = 0.6 * (skin * luminance) + 0.4 * original → teinte vers la peau et DÉSATURE
+# (c'est ce qui rend les bouches non « rouge vif » dans le jeu original).
+LUM = (0.3086, 0.6094, 0.0820)
+def skin_filter(img, color, rn=0.6, ro=0.4):
+    cr,cg,cb = ((color>>16)&255)/255, ((color>>8)&255)/255, (color&255)/255
+    px=img.load(); out=Image.new("RGBA",img.size,(0,0,0,0)); op=out.load()
+    for y in range(img.height):
+        for x in range(img.width):
+            r,g,b,a=px[x,y]
+            if a==0: continue
+            nr,ng,nb=r/255,g/255,b/255
+            L=LUM[0]*nr+LUM[1]*ng+LUM[2]*nb
+            op[x,y]=(max(0,min(255,int((rn*cr*L+ro*nr)*255))),
+                     max(0,min(255,int((rn*cg*L+ro*ng)*255))),
+                     max(0,min(255,int((rn*cb*L+ro*nb)*255))), a)
+    return out
+# Les yeux/bouches sont partagés (pas par élève) → on applique le filtre avec une carnation
+# MÉDIANE représentative (les 5 carnations sont toutes des beiges proches → écart négligeable).
+REP_SKIN = 0xD99A6E
 
 def canvased(c, dy=0):  # place a raw 17x25 (or 23x17 hair) cell on the shared 24x27 canvas
     im=Image.new("RGBA",(W,H),(0,0,0,0)); im.alpha_composite(c,(PL,PT+dy)); return im
@@ -74,12 +96,12 @@ class R:
 for f in glob.glob(OUT+"/*.png"): os.remove(f)
 os.makedirs(OUT, exist_ok=True)
 
-# --- shared eyes/mouth frames (raw atlas, not recolored) ---
+# --- shared eyes/mouth frames : filtre peau (carnation médiane) comme dans le jeu ---
 for f in NEEDED_EYES:
-    canvased(cell(f*17,192,17,25)).save(f"{OUT}/eyes{f}.png")
+    canvased(skin_filter(cell(f*17,192,17,25), REP_SKIN)).save(f"{OUT}/eyes{f}.png")
 for f in NEEDED_MOUTH:
-    canvased(cell(f*17,224,17,25)).save(f"{OUT}/mouth_m{f}.png")
-    canvased(cell(f*17,256,17,25)).save(f"{OUT}/mouth_f{f}.png")
+    canvased(skin_filter(cell(f*17,224,17,25), REP_SKIN)).save(f"{OUT}/mouth_m{f}.png")
+    canvased(skin_filter(cell(f*17,256,17,25), REP_SKIN)).save(f"{OUT}/mouth_f{f}.png")
 
 # --- per-student layers ---
 N=40
@@ -110,7 +132,9 @@ for n in range(N):
 
     head=Image.new("RGBA",(W,H),(0,0,0,0))
     head.alpha_composite(colorize_grays(cell(34+headv*17,0,17,25),skin,0.65),(PL,PT))  # face skin
-    head.alpha_composite(colorize_grays(cell(hairf*23,hairY,23,17),hcol),(PL,PT-1))    # hair (aligned)
+    # cheveux : couleur de cheveux PUIS filtre peau (le jeu l'applique à tout skin.head) → teinte
+    # plus douce, harmonisée avec le visage (fin des cheveux « fluo »).
+    head.alpha_composite(skin_filter(colorize_grays(cell(hairf*23,hairY,23,17),hcol), skin),(PL,PT-1))
     head.save(f"{OUT}/head{n}.png")
 
     # bras par humeur (arms_short) : 8 mains posées (neutre), 9 avachi (blasé),
